@@ -57,7 +57,6 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
             msg = json.loads(data)
 
-            # Handle ping from client to keep connection alive
             if "ping" in msg:
                 await websocket.send_text(json.dumps({"response": "pong"}))
                 continue
