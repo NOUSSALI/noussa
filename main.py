@@ -23,6 +23,10 @@ Current context: {context}
 Relevant memories: {memories}
 """
 
+@app.get("/health")
+async def health_check():
+    return {"status": "alive"}
+
 def retrieve_memories(query, limit=5):
     try:
         response = supabase.table("memories").select("text").limit(50).execute()
@@ -57,6 +61,7 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
             msg = json.loads(data)
 
+            # Handle ping to keep connection alive
             if "ping" in msg:
                 await websocket.send_text(json.dumps({"response": "pong"}))
                 continue
@@ -65,22 +70,28 @@ async def websocket_endpoint(websocket: WebSocket):
             device_context = msg.get("context", {})
             context_str = f"Device: {device_context.get('device', 'unknown')}\nScreen: {device_context.get('screen', 'none')}"
 
+            # Retrieve memories (safe)
             memories = retrieve_memories(user_input)
-            memories_str = "\n".join(memories)
+            memories_str = "\n".join(memories) if memories else "No relevant memories."
 
             prompt = SYSTEM_PROMPT.format(context=context_str, memories=memories_str)
 
-            response = groq.chat.completions.create(
-                model="llama-3.1-70b-versatile",
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": user_input}
-                ],
-                max_tokens=500,
-                temperature=0.7
-            )
-            reply = response.choices[0].message.content
+            try:
+                response = groq.chat.completions.create(
+                    model="llama-3.1-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": user_input}
+                    ],
+                    max_tokens=500,
+                    temperature=0.7
+                )
+                reply = response.choices[0].message.content
+            except Exception as e:
+                reply = f"I'm sorry, sir. I encountered an error while processing your request: {str(e)}"
+                print(f"Groq error: {e}")
 
+            # Save memory (safe)
             add_memory(f"User: {user_input}\nAssistant: {reply}")
 
             await websocket.send_text(json.dumps({"response": reply}))
@@ -88,4 +99,4 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        print(f"WebSocket outer error: {e}")
