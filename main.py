@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import time
 import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from supabase import create_client, Client
@@ -12,7 +13,11 @@ app = FastAPI()
 
 HF_API_KEY = os.getenv("HF_API_KEY")
 HF_MODEL = os.getenv("HF_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")
-HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+# Use the newer router endpoint (more reliable)
+HF_API_URLS = [
+    f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}",
+    f"https://api-inference.huggingface.co/models/{HF_MODEL}"  # fallback old endpoint
+]
 
 supabase: Client = create_client(
     os.getenv("SUPABASE_URL"),
@@ -43,17 +48,29 @@ def query_huggingface(prompt_text):
             "return_full_text": False
         }
     }
-    response = requests.post(HF_API_URL, headers=headers, json=payload)
-    if response.status_code != 200:
-        raise Exception(f"Hugging Face API error: {response.status_code} - {response.text}")
-    result = response.json()
-    # The result is usually a list with one dict containing 'generated_text'
-    if isinstance(result, list) and len(result) > 0:
-        return result[0]["generated_text"].strip()
-    elif isinstance(result, dict) and "generated_text" in result:
-        return result["generated_text"].strip()
-    else:
-        raise Exception(f"Unexpected response format: {result}")
+    # Try each endpoint with retries
+    for url in HF_API_URLS:
+        for attempt in range(3):
+            try:
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                if response.status_code == 200:
+                    result = response.json()
+                    if isinstance(result, list) and len(result) > 0:
+                        return result[0]["generated_text"].strip()
+                    elif isinstance(result, dict) and "generated_text" in result:
+                        return result["generated_text"].strip()
+                    else:
+                        raise Exception(f"Unexpected response format: {result}")
+                else:
+                    # If 4xx or 5xx, maybe endpoint is wrong; try next endpoint
+                    print(f"Attempt {attempt+1}: HTTP {response.status_code} from {url}, response: {response.text[:200]}")
+                    if response.status_code == 404:
+                        break  # model not found, no point retrying
+                    time.sleep(2 ** attempt)  # exponential backoff
+            except requests.exceptions.RequestException as e:
+                print(f"Attempt {attempt+1}: Network error from {url}: {e}")
+                time.sleep(2 ** attempt)
+    raise Exception("All Hugging Face endpoints failed after retries")
 
 def retrieve_memories(query, limit=5):
     try:
