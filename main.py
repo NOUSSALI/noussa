@@ -24,23 +24,30 @@ Relevant memories: {memories}
 """
 
 def retrieve_memories(query, limit=5):
-    response = supabase.table("memories").select("text").limit(50).execute()
-    all_memories = [row["text"] for row in response.data]
-    query_words = set(query.lower().split())
-    scored = []
-    for mem in all_memories:
-        mem_words = set(mem.lower().split())
-        score = len(query_words.intersection(mem_words))
-        scored.append((score, mem))
-    scored.sort(reverse=True, key=lambda x: x[0])
-    return [mem for _, mem in scored[:limit]]
+    try:
+        response = supabase.table("memories").select("text").limit(50).execute()
+        all_memories = [row["text"] for row in response.data]
+        query_words = set(query.lower().split())
+        scored = []
+        for mem in all_memories:
+            mem_words = set(mem.lower().split())
+            score = len(query_words.intersection(mem_words))
+            scored.append((score, mem))
+        scored.sort(reverse=True, key=lambda x: x[0])
+        return [mem for _, mem in scored[:limit]]
+    except Exception as e:
+        print(f"Memory retrieval error: {e}")
+        return []
 
 def add_memory(text, importance=5):
-    supabase.table("memories").insert({
-        "text": text,
-        "importance": importance,
-        "embedding": [0.0] * 1536
-    }).execute()
+    try:
+        supabase.table("memories").insert({
+            "text": text,
+            "importance": importance,
+            "embedding": [0.0] * 1536
+        }).execute()
+    except Exception as e:
+        print(f"Memory insert error: {e}")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -49,6 +56,12 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             msg = json.loads(data)
+
+            # Handle ping from client to keep connection alive
+            if "ping" in msg:
+                await websocket.send_text(json.dumps({"response": "pong"}))
+                continue
+
             user_input = msg.get("text", "")
             device_context = msg.get("context", {})
             context_str = f"Device: {device_context.get('device', 'unknown')}\nScreen: {device_context.get('screen', 'none')}"
@@ -75,3 +88,5 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
+    except Exception as e:
+        print(f"WebSocket error: {e}")
