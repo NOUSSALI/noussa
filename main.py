@@ -16,13 +16,14 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # List of free models to try in order (update as needed)
 FREE_MODELS = [
-    "mistralai/mistral-7b-instruct:free",
-    "google/gemma-2-9b-it:free",
-    "microsoft/phi-3-mini-4k-instruct:free",
-    "qwen/qwen-2-7b-instruct:free",
-    "meta-llama/llama-3.2-1b-instruct:free"
+    "google/gemma-4-26b-a4b-it:free",
+    "google/gemma-4-31b-it:free",
+    "z-ai/glm-5.2:free",
+    "nvidia/nemotron-3-ultra:free",
+    "minimax/minimax-m3:free",
+    "minimax/minimax-m2.7:free",
+    "nvidia/nemotron-3-super:free"
 ]
-
 supabase: Client = create_client(
     os.getenv("SUPABASE_URL"),
     os.getenv("SUPABASE_ANON_KEY")
