@@ -12,8 +12,16 @@ load_dotenv()
 app = FastAPI()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.2-3b-instruct:free")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# List of free models to try in order (update as needed)
+FREE_MODELS = [
+    "mistralai/mistral-7b-instruct:free",
+    "google/gemma-2-9b-it:free",
+    "microsoft/phi-3-mini-4k-instruct:free",
+    "qwen/qwen-2-7b-instruct:free",
+    "meta-llama/llama-3.2-1b-instruct:free"
+]
 
 supabase: Client = create_client(
     os.getenv("SUPABASE_URL"),
@@ -36,28 +44,29 @@ def query_openrouter(prompt_text):
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
-    payload = {
-        "model": OPENROUTER_MODEL,
-        "messages": [
-            {"role": "user", "content": prompt_text}
-        ],
-        "max_tokens": 500,
-        "temperature": 0.7
-    }
-    for attempt in range(3):
-        try:
-            response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
-            print(f"OpenRouter attempt {attempt+1}: status {response.status_code}", flush=True)
-            if response.status_code == 200:
-                result = response.json()
-                return result["choices"][0]["message"]["content"].strip()
-            else:
-                print(f"OpenRouter error body: {response.text[:300]}", flush=True)
-                time.sleep(2 ** attempt)
-        except requests.exceptions.RequestException as e:
-            print(f"OpenRouter network error: {e}", flush=True)
-            time.sleep(2 ** attempt)
-    raise Exception("OpenRouter API failed after retries")
+    for model in FREE_MODELS:
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "user", "content": prompt_text}
+            ],
+            "max_tokens": 500,
+            "temperature": 0.7
+        }
+        for attempt in range(2):  # 2 attempts per model
+            try:
+                response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
+                print(f"Model: {model}, Attempt {attempt+1}: status {response.status_code}", flush=True)
+                if response.status_code == 200:
+                    result = response.json()
+                    return result["choices"][0]["message"]["content"].strip()
+                else:
+                    print(f"Error body: {response.text[:200]}", flush=True)
+                    time.sleep(1)
+            except requests.exceptions.RequestException as e:
+                print(f"Network error: {e}", flush=True)
+                time.sleep(1)
+    raise Exception("All free models failed. Check OpenRouter API key or model availability.")
 
 def retrieve_memories(query, limit=5):
     try:
