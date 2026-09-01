@@ -1,7 +1,7 @@
 import os
 import json
-import asyncio
 import time
+import sys
 import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from supabase import create_client, Client
@@ -12,12 +12,8 @@ load_dotenv()
 app = FastAPI()
 
 HF_API_KEY = os.getenv("HF_API_KEY")
-HF_MODEL = os.getenv("HF_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")
-# Use the newer router endpoint (more reliable)
-HF_API_URLS = [
-    f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}",
-    f"https://api-inference.huggingface.co/models/{HF_MODEL}"  # fallback old endpoint
-]
+HF_MODEL = os.getenv("HF_MODEL", "HuggingFaceH4/zephyr-7b-beta")
+HF_API_URL = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
 
 supabase: Client = create_client(
     os.getenv("SUPABASE_URL"),
@@ -48,29 +44,27 @@ def query_huggingface(prompt_text):
             "return_full_text": False
         }
     }
-    # Try each endpoint with retries
-    for url in HF_API_URLS:
-        for attempt in range(3):
-            try:
-                response = requests.post(url, headers=headers, json=payload, timeout=30)
-                if response.status_code == 200:
-                    result = response.json()
-                    if isinstance(result, list) and len(result) > 0:
-                        return result[0]["generated_text"].strip()
-                    elif isinstance(result, dict) and "generated_text" in result:
-                        return result["generated_text"].strip()
-                    else:
-                        raise Exception(f"Unexpected response format: {result}")
+    for attempt in range(3):
+        try:
+            response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
+            print(f"HF attempt {attempt+1}: status {response.status_code}", flush=True)
+            if response.status_code == 200:
+                result = response.json()
+                if isinstance(result, list) and len(result) > 0:
+                    return result[0]["generated_text"].strip()
+                elif isinstance(result, dict) and "generated_text" in result:
+                    return result["generated_text"].strip()
                 else:
-                    # If 4xx or 5xx, maybe endpoint is wrong; try next endpoint
-                    print(f"Attempt {attempt+1}: HTTP {response.status_code} from {url}, response: {response.text[:200]}")
-                    if response.status_code == 404:
-                        break  # model not found, no point retrying
-                    time.sleep(2 ** attempt)  # exponential backoff
-            except requests.exceptions.RequestException as e:
-                print(f"Attempt {attempt+1}: Network error from {url}: {e}")
+                    raise Exception(f"Unexpected format: {result}")
+            else:
+                print(f"HF error body: {response.text[:300]}", flush=True)
+                if response.status_code == 404:
+                    break  # model not found, no point retrying
                 time.sleep(2 ** attempt)
-    raise Exception("All Hugging Face endpoints failed after retries")
+        except requests.exceptions.RequestException as e:
+            print(f"HF network error: {e}", flush=True)
+            time.sleep(2 ** attempt)
+    raise Exception("Hugging Face API failed after retries")
 
 def retrieve_memories(query, limit=5):
     try:
@@ -85,7 +79,7 @@ def retrieve_memories(query, limit=5):
         scored.sort(reverse=True, key=lambda x: x[0])
         return [mem for _, mem in scored[:limit]]
     except Exception as e:
-        print(f"Memory retrieval error: {e}")
+        print(f"Memory retrieval error: {e}", flush=True)
         return []
 
 def add_memory(text, importance=5):
@@ -96,11 +90,12 @@ def add_memory(text, importance=5):
             "embedding": [0.0] * 1536
         }).execute()
     except Exception as e:
-        print(f"Memory insert error: {e}")
+        print(f"Memory insert error: {e}", flush=True)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    print("Client connected", flush=True)
     try:
         while True:
             data = await websocket.receive_text()
@@ -123,14 +118,14 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 reply = query_huggingface(full_prompt)
             except Exception as e:
-                reply = f"I'm sorry, sir. I encountered an error while processing your request: {str(e)}"
-                print(f"HF error: {e}")
+                reply = f"Error: {str(e)}"
+                print(f"HF error: {e}", flush=True)
 
             add_memory(f"User: {user_input}\nAssistant: {reply}")
 
             await websocket.send_text(json.dumps({"response": reply}))
 
     except WebSocketDisconnect:
-        pass
+        print("Client disconnected", flush=True)
     except Exception as e:
-        print(f"WebSocket outer error: {e}")
+        print(f"WebSocket outer error: {e}", flush=True)
