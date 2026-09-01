@@ -11,9 +11,9 @@ load_dotenv()
 
 app = FastAPI()
 
-HF_API_KEY = os.getenv("HF_API_KEY")
-HF_MODEL = os.getenv("HF_MODEL", "HuggingFaceH4/zephyr-7b-beta")
-HF_API_URL = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.2-3b-instruct:free")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 supabase: Client = create_client(
     os.getenv("SUPABASE_URL"),
@@ -31,40 +31,33 @@ Relevant memories: {memories}
 async def health_check():
     return {"status": "alive"}
 
-def query_huggingface(prompt_text):
+def query_openrouter(prompt_text):
     headers = {
-        "Authorization": f"Bearer {HF_API_KEY}",
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "inputs": prompt_text,
-        "parameters": {
-            "max_new_tokens": 500,
-            "temperature": 0.7,
-            "return_full_text": False
-        }
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {"role": "user", "content": prompt_text}
+        ],
+        "max_tokens": 500,
+        "temperature": 0.7
     }
     for attempt in range(3):
         try:
-            response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
-            print(f"HF attempt {attempt+1}: status {response.status_code}", flush=True)
+            response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
+            print(f"OpenRouter attempt {attempt+1}: status {response.status_code}", flush=True)
             if response.status_code == 200:
                 result = response.json()
-                if isinstance(result, list) and len(result) > 0:
-                    return result[0]["generated_text"].strip()
-                elif isinstance(result, dict) and "generated_text" in result:
-                    return result["generated_text"].strip()
-                else:
-                    raise Exception(f"Unexpected format: {result}")
+                return result["choices"][0]["message"]["content"].strip()
             else:
-                print(f"HF error body: {response.text[:300]}", flush=True)
-                if response.status_code == 404:
-                    break  # model not found, no point retrying
+                print(f"OpenRouter error body: {response.text[:300]}", flush=True)
                 time.sleep(2 ** attempt)
         except requests.exceptions.RequestException as e:
-            print(f"HF network error: {e}", flush=True)
+            print(f"OpenRouter network error: {e}", flush=True)
             time.sleep(2 ** attempt)
-    raise Exception("Hugging Face API failed after retries")
+    raise Exception("OpenRouter API failed after retries")
 
 def retrieve_memories(query, limit=5):
     try:
@@ -116,10 +109,10 @@ async def websocket_endpoint(websocket: WebSocket):
             full_prompt = f"{prompt}\n\nUser: {user_input}\nAssistant:"
 
             try:
-                reply = query_huggingface(full_prompt)
+                reply = query_openrouter(full_prompt)
             except Exception as e:
                 reply = f"Error: {str(e)}"
-                print(f"HF error: {e}", flush=True)
+                print(f"OpenRouter error: {e}", flush=True)
 
             add_memory(f"User: {user_input}\nAssistant: {reply}")
 
