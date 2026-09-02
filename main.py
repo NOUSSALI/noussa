@@ -34,6 +34,9 @@ Be concise, loyal, and helpful. Address the user as 'sir' or 'ma'am'.
 Current context: {context}
 Relevant memories: {memories}
 
+Your long-term memory is stored automatically in a database. Do not use file commands to save user information or memories.
+Only use file commands when the user explicitly asks for file operations (create, edit, delete, open, move, copy, etc.).
+
 When the user asks you to perform file, folder, or application operations, respond with a command block exactly in one of these formats:
 [CREATE_FILE:filepath|content]
 [READ_FILE:filepath]
@@ -77,7 +80,6 @@ def query_openrouter(prompt_text):
                 result = response.json()
                 return result["choices"][0]["message"]["content"].strip()
             else:
-                # Skip to next model immediately
                 print(f"Error body: {response.text[:200]}", flush=True)
                 continue
         except requests.exceptions.RequestException as e:
