@@ -14,7 +14,6 @@ app = FastAPI()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Prioritized list of free models
 FREE_MODELS = [
     "minimax/minimax-m3:free",
     "minimax/minimax-m2.7:free",
@@ -35,14 +34,17 @@ Be concise, loyal, and helpful. Address the user as 'sir' or 'ma'am'.
 Current context: {context}
 Relevant memories: {memories}
 
-When the user asks you to perform file operations, respond with a command block exactly in this format:
+When the user asks you to perform file operations, respond with a command block exactly in one of these formats:
 [CREATE_FILE:filepath|content]
-or
 [READ_FILE:filepath]
-or
+[EDIT_FILE:filepath|new_content]
+[APPEND_FILE:filepath|content]
+[DELETE_FILE:filepath]
 [LIST_DIR:directory]
-Do not add any other text before or after the command block unless you need to explain what you're doing.
-For file creation, the filepath must be within the user's Desktop or Documents folder.
+[CREATE_DIR:directory]
+
+Do not add any other text before or after the command block unless you need to explain.
+Important: Use the home_dir provided in the context when constructing paths. For example, if home_dir is "C:\\Users\\Guedich Ali", then Desktop is "C:\\Users\\Guedich Ali\\Desktop". Always use the correct home_dir.
 """
 
 @app.get("/health")
@@ -117,7 +119,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             user_input = msg.get("text", "")
             device_context = msg.get("context", {})
-            context_str = f"Device: {device_context.get('device', 'unknown')}\nScreen: {device_context.get('screen', 'none')}"
+            context_str = f"Device: {device_context.get('device', 'unknown')}\nScreen: {device_context.get('screen', 'none')}\nHome directory: {device_context.get('home_dir', 'unknown')}"
 
             memories = retrieve_memories(user_input)
             memories_str = "\n".join(memories) if memories else "No relevant memories."
