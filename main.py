@@ -62,6 +62,7 @@ def query_openrouter(prompt_text):
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
+    # Try each model once with short timeout and no sleeps
     for model in FREE_MODELS:
         payload = {
             "model": model,
@@ -69,19 +70,19 @@ def query_openrouter(prompt_text):
             "max_tokens": 500,
             "temperature": 0.7
         }
-        for attempt in range(2):
-            try:
-                response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
-                print(f"Model: {model}, Attempt {attempt+1}: status {response.status_code}", flush=True)
-                if response.status_code == 200:
-                    result = response.json()
-                    return result["choices"][0]["message"]["content"].strip()
-                else:
-                    print(f"Error body: {response.text[:200]}", flush=True)
-                    time.sleep(1)
-            except requests.exceptions.RequestException as e:
-                print(f"Network error: {e}", flush=True)
-                time.sleep(1)
+        try:
+            response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=15)
+            print(f"Model: {model}, status {response.status_code}", flush=True)
+            if response.status_code == 200:
+                result = response.json()
+                return result["choices"][0]["message"]["content"].strip()
+            else:
+                # Skip to next model immediately
+                print(f"Error body: {response.text[:200]}", flush=True)
+                continue
+        except requests.exceptions.RequestException as e:
+            print(f"Network error for {model}: {e}", flush=True)
+            continue
     raise Exception("All free models failed. Check OpenRouter API key or model availability.")
 
 def retrieve_memories(query, limit=5):
