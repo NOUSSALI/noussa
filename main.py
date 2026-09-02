@@ -15,12 +15,10 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 FREE_MODELS = [
-    "google/gemma-4-31b-it:free",
-    "nvidia/nemotron-3-super:free",
-    "z-ai/glm-5.2:free",
-    "minimax/minimax-m3:free",
-    "minimax/minimax-m2.7:free",
-    "google/gemma-4-26b-a4b-it:free"
+    "minimax/minimax-m3:free",              # Reliable, currently working
+    "z-ai/glm-5.2:free",                   # Might be rate‑limited sometimes
+    "google/gemma-4-26b-a4b-it:free",     # Small but sometimes available
+    "google/gemma-4-31b-it:free"           # Strong but often rate‑limited
 ]
 supabase: Client = create_client(
     os.getenv("SUPABASE_URL"),
